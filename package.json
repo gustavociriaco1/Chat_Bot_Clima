@@ -1,20 +1,21 @@
 {
-  "dependencies": {
-    "axios": "^1.11.0",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.2",
-    "express": "^5.1.0",
-    "openai": "^5.20.0"
-  },
-  "name": "desafio",
+  "name": "chatbot-inteligente",
   "version": "1.0.0",
+  "description": "Chatbot que responde sobre clima e realiza conversas gerais usando Groq e OpenWeather.",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node Server.js/server.js"
+    "start": "node server.js"
   },
-  "keywords": [],
+  "dependencies": {
+    "axios": "^0.27.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "express": "^4.17.1"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "author": "",
-  "license": "ISC",
-  "description": ""
+  "license": "ISC"
 }
