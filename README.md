@@ -60,4 +60,7 @@ Execute o comando para iniciar o servidor:
 Entrar na pasta do server.js e digitar node server.js para inciar o servidor
 
 O servidor estará disponível em http://localhost:3000
+
+
+
 .
