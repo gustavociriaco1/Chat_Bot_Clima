@@ -7,78 +7,79 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configuração de CORS
-app.use(cors({
-  origin: 'http://127.0.0.1:5500',
-  methods: 'GET,POST',
-}));
+app.use(
+  cors({
+    origin: "http://127.0.0.1:5500",
+    methods: "GET,POST",
+  })
+);
+
 app.use(express.json());
 app.use(express.static("public"));
 
-// Função para conversar usando o modelo meta-llama/llama-4-scout-17b-16e-instruct da Groq
-async function responderGeral(message) {
+// Função para classificar a intenção do usuário usando Groq
+async function analisarMensagem(message) {
   try {
     const response = await axios.post(
-      "https://api.groq.com/v1/engines/meta-llama/llama-4-scout-17b-16e-instruct/completions",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
-        prompt: message,
-        max_tokens: 150,
-        temperature: 0.7,
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        messages: [
+          {
+            role: "system",
+            content: `Você é um classificador de intenções. Sempre responda em JSON válido com este formato:
+{
+  "clima": 0 ou 1,
+  "cidade": "nome da cidade ou vazio",
+  "resposta": "resposta amigável ao usuário"
+}
+IMPORTANTE:
+- Não use acentos graves (\\) ou blocos de código.
+- "clima" deve ser 1 apenas se a pergunta for sobre clima/previsão do tempo.
+- "cidade" deve estar preenchido apenas se for sobre clima.`,
+          },
+          { role: "user", content: message },
+        ],
+        temperature: 0,
+        max_completion_tokens: 200,
+        top_p: 1,
+        stream: false,
       },
       {
         headers: {
-          "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
           "Content-Type": "application/json",
         },
       }
     );
 
-    const resposta = response.data.choices[0].text.trim();
-    return resposta;
+    const conteudo = response.data.choices[0].message.content.trim();
+    return JSON.parse(conteudo); // já retorna objeto { clima, cidade, resposta }
   } catch (err) {
-    console.error(err);
-    return "Ocorreu um erro ao processar sua mensagem.";
+    console.error("Erro ao analisar mensagem:", err.response?.data || err.message);
+    return {
+      clima: 0,
+      cidade: "",
+      resposta: "Desculpe, não consegui processar sua mensagem.",
+    };
   }
 }
 
-// --- Funções de clima ---
-function isWeatherQuestion(message) {
-  const keywords = ["tempo", "clima", "previsão", "chuva", "sol", "temperatura"];
-  return keywords.some(word => message.toLowerCase().includes(word));
-}
-
-function extrairCidade(message) {
-  const match = message.match(/\b(?:em|na|no|para)\s+(.+?)(?:[?.!]|$)/i);
-  if (match && match[1]) return formatarCidade(match[1].replace(/[?.!,]/g, "").trim());
-
-  const tokens = message.trim().split(/\s+/);
-  if (tokens.length === 1 && tokens[0].length > 1 && tokens[0].length < 40) {
-    return formatarCidade(tokens[0]);
-  }
-  return null;
-}
-
-function formatarCidade(cidade) {
-  return cidade
-    .split(" ")
-    .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
-    .join(" ");
-}
-
+// Função para buscar clima
 async function buscarClima(cidade) {
   try {
-    const r = await axios.get(
-      `https://api.openweathermap.org/data/2.5/weather`,
-      {
-        params: {
-          q: cidade,
-          appid: process.env.WEATHER_KEY,
-          units: "metric",
-          lang: "pt_br"
-        }
-      }
-    );
+    const r = await axios.get("https://api.openweathermap.org/data/2.5/weather", {
+      params: {
+        q: cidade,
+        appid: process.env.WEATHER_KEY,
+        units: "metric",
+        lang: "pt_br",
+      },
+    });
+
     const clima = r.data.weather?.[0]?.description ?? "indisponível";
     const temp = r.data.main?.temp ?? "—";
+
     return `O clima está ${clima}, com temperatura de ${temp}°C.`;
   } catch (err) {
     return `Não consegui encontrar a previsão para "${cidade}". Pode confirmar o nome da cidade?`;
@@ -88,46 +89,40 @@ async function buscarClima(cidade) {
 // --- Rota principal ---
 app.post("/chat", async (req, res) => {
   const { message } = req.body;
+
   if (!message || typeof message !== "string") {
     return res.status(400).json({ error: "Mensagem não fornecida" });
   }
 
   try {
-    if (isWeatherQuestion(message)) {
-      const cidade = extrairCidade(message);
-      if (cidade) {
-        const respostaClima = await buscarClima(cidade);
-        return res.json({
-          clima: 1,
-          cidade: cidade,
-          resposta: respostaClima
-        });
-      } else {
-        return res.json({
-          clima: 1,
-          cidade: "",
-          resposta: "Por favor, informe a cidade que deseja saber o clima."
-        });
-      }
-    } else {
-      const respostaGeral = await responderGeral(message);  // Usando o modelo Groq para responder
+    const analise = await analisarMensagem(message);
+
+    if (analise.clima === 1 && analise.cidade) {
+      const respostaClima = await buscarClima(analise.cidade);
       return res.json({
-        clima: 0,
-        cidade: "",
-        resposta: respostaGeral
+        clima: 1,
+        cidade: analise.cidade,
+        resposta: respostaClima,
       });
     }
+
+    // Caso geral
+    return res.json({
+      clima: 0,
+      cidade: "",
+      resposta: analise.resposta,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({
       clima: 0,
       cidade: "",
-      resposta: "Ocorreu um erro ao processar sua mensagem."
+      resposta: "Ocorreu um erro ao processar sua mensagem.",
     });
   }
 });
 
-// --- Start ---
+// Iniciar o servidor
 app.listen(PORT, () => {
   console.log(`Servidor rodando em http://localhost:${PORT}`);
 });
